@@ -270,6 +270,35 @@ func (s *s3Storage) ListBlobs(ctx context.Context, prefix blob.ID, callback func
 	return nil
 }
 
+func (s *s3Storage) ExtendBlobRetention(ctx context.Context, b blob.ID, opts blob.PutOptions) error {
+	var (
+		retentionMode   minio.RetentionMode
+		retainUntilDate time.Time
+	)
+
+	if opts.RetentionPeriod != 0 {
+		retentionMode = minio.RetentionMode(opts.RetentionMode)
+		if !retentionMode.IsValid() {
+			return errors.Errorf("invalid retention mode: %q", opts.RetentionMode)
+		}
+
+		retainUntilDate = clock.Now().Add(opts.RetentionPeriod).UTC()
+	}
+
+	// We can always extend retention forward, but we cannot reduce the retention time.
+	err := s.cli.PutObjectRetention(ctx, s.BucketName, s.getObjectNameString(b), minio.PutObjectRetentionOptions{
+		GovernanceBypass: false,
+		Mode:             &retentionMode,
+		RetainUntilDate:  &retainUntilDate,
+	})
+
+	if isInvalidCredentials(err) {
+		return blob.ErrInvalidCredentials
+	}
+
+	return err //nolint:wrapcheck
+}
+
 func (s *s3Storage) ConnectionInfo() blob.ConnectionInfo {
 	return blob.ConnectionInfo{
 		Type:   s3storageType,
