@@ -45,6 +45,7 @@ const (
 	TaskIndexCompaction           = "index-compaction"
 	TaskCleanupLogs               = "cleanup-logs"
 	TaskCleanupEpochManager       = "cleanup-epoch-manager"
+	TaskExtendRetention           = "extend-retention"
 )
 
 // shouldRun returns Mode if repository is due for periodic maintenance.
@@ -325,6 +326,14 @@ func runTaskCleanupLogs(ctx context.Context, runParams RunParameters, s *Schedul
 	})
 }
 
+func runTaskExtendRetention(ctx context.Context, runParams RunParameters, s *Schedule, safety SafetyParameters) error {
+	return ReportRun(ctx, runParams.rep, TaskExtendRetention, s, func() error {
+		objects, err := ExtendBlobRetention()
+		log(ctx).Infof("Extended retention of %v objects.", len(objects))
+		return nil
+	})
+}
+
 func runTaskCleanupEpochManager(ctx context.Context, runParams RunParameters, s *Schedule) error {
 	em, ok, emerr := runParams.rep.ContentManager().EpochManager()
 	if emerr != nil {
@@ -437,6 +446,10 @@ func runFullMaintenance(ctx context.Context, runParams RunParameters, safety Saf
 
 	if err := runTaskCleanupEpochManager(ctx, runParams, s); err != nil {
 		return errors.Wrap(err, "error cleaning up epoch manager")
+	}
+
+	if err := runTaskExtendRetention(ctx, runParams, s, safety); err != nil {
+		return errors.Wrap(err, "error extending retentions")
 	}
 
 	return nil
